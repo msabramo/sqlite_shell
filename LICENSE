@@ -1,0 +1,36 @@
+This project contains a ton of code lifted from APSW
+(https://github.com/rogerbinns/apsw/) by Roger Binns. Specifically, I have used
+code from APSW's
+[tools/shell.py](https://github.com/rogerbinns/apsw/blob/master/tools/shell.py).
+
+APSW is Copyright (c) 2004-2015 Roger Binns <rogerb@rogerbinns.com>
+
+I have borrowed code from APSW, but I have also modified said code, so be aware
+that this is NOT APSW and I am NOT the original author of much of this code.
+
+I have opted to use the same licensing terms as APSW, which is reproduced below.
+
+All code and documentation is provided under this license:
+
+This software is provided 'as-is', without any express or implied
+warranty. In no event will the authors be held liable for any damages
+arising from the use of this software.
+
+Permission is granted to anyone to use this software for any purpose,
+including commercial applications, and to alter it and redistribute it
+freely, subject to the following restrictions:
+
+    1. The origin of this software must not be misrepresented; you must not
+    claim that you wrote the original software. If you use this software
+    in a product, an acknowledgment in the product documentation would be
+    appreciated but is not required.
+
+    2. Altered source versions must be plainly marked as such, and must not be
+    misrepresented as being the original software.
+
+    3. This notice may not be removed or altered from any source
+    distribution.
+
+Alternatively you may strike the license above and use it under any
+OSI approved open source license such as those listed at
+http://opensource.org/licenses/alphabetical
