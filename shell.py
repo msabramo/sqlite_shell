@@ -1,7 +1,8 @@
 #!/usr/bin/env python
 
 import sys
-import apsw
+import json
+import sqlite3
 import shlex
 import os
 import csv
@@ -154,7 +155,7 @@ class Shell(object):
         if not self._db:
             if not self.dbfilename:
                 self.dbfilename=":memory:"
-            self._db=apsw.Connection(self.dbfilename, flags=apsw.SQLITE_OPEN_URI | apsw.SQLITE_OPEN_READWRITE | apsw.SQLITE_OPEN_CREATE)
+            self._db=sqlite3.Connection(self.dbfilename, detect_types=sqlite3.PARSE_COLNAMES | sqlite3.PARSE_DECLTYPES)
         return self._db
 
     def _set_db(self, newv):
@@ -252,7 +253,7 @@ class Shell(object):
                 continue
 
             if args[0]=="version":
-                self.write(self.stdout, apsw.sqlitelibversion()+"\n")
+                self.write(self.stdout, sqlite3.sqlite_version+"\n")
                 # A pretty gnarly thing to do
                 sys.exit(0)
 
@@ -626,7 +627,7 @@ OPTIONS include:
         """
         if header:
             return
-        fmt=lambda x: self.colour.colour_value(x, apsw.format_sql_value(x))
+        fmt=lambda x: self.colour.colour_value(x, json.dumps(str(x)))
         out="INSERT INTO "+self._output_table+" VALUES("+",".join([fmt(l) for l in line])+");\n"
         self.write(self.stdout, out)
 
@@ -711,10 +712,10 @@ OPTIONS include:
         """
         if intro is None:
             intro="""
-SQLite version %s (APSW %s)
+SQLite version %s (python sqlite3 %s)
 Enter ".help" for instructions
 Enter SQL statements terminated with a ";"
-""" % (apsw.sqlitelibversion(), apsw.apswversion())
+""" % (sqlite3.sqlite_version, sqlite3.version)
             intro=intro.lstrip()
         if self.interactive and intro:
             if sys.version_info<(3,0):
@@ -845,33 +846,19 @@ Enter SQL statements terminated with a ";"
         cur=self.db.cursor()
         # we need to know when each new statement is executed
         state={'newsql': True, 'timing': None}
-        def et(cur, sql, bindings):
-            state['newsql']=True
-            # if time reporting, do so now
-            if not internal and self.timer:
-                if state['timing']:
-                    self.display_timing(state['timing'], self.get_resource_usage())
-            # print statement if echo is on
-            if not internal and self.echo:
-                # ? should we strip leading and trailing whitespace? backslash quote stuff?
-                if bindings:
-                    self.write(self.stderr, "%s [%s]\n" % (sql, bindings))
-                else:
-                    self.write(self.stderr, sql+"\n")
-            # save resource from begining of command (ie don't include echo time above)
-            if not internal and self.timer:
-                state['timing']=self.get_resource_usage()
-            return True
-        cur.setexectrace(et)
         # processing loop
         try:
-            for row in cur.execute(sql, bindings):
+            if bindings:
+                rows = cur.execute(sql, bindings)
+            else:
+                rows = cur.execute(sql)
+            for row in rows:
                 if state['newsql']:
                     # summary line?
                     if summary:
                         self._output_summary(summary[0])
                     # output a header always
-                    cols=[h for h,d in cur.getdescription()]
+                    cols=[h for h,d,_,_,_,_,_ in cur.description]
                     self.output(True, cols)
                     state['newsql']=False
                 self.output(False, row)
@@ -947,6 +934,8 @@ Enter SQL statements terminated with a ";"
         The backup is done at the page level - SQLite copies the pages
         as is.  There is no round trip through SQL code.
         """
+        raise NotImplementedError('The `.backup` command is not implemented.')
+
         dbname="main"
         if len(cmd)==1:
             fname=cmd[0]
@@ -1109,11 +1098,11 @@ Enter SQL statements terminated with a ";"
                 self.write(self.stdout, textwrap.fill(s, 78, initial_indent="-- ", subsequent_indent="-- ")+"\n")
 
             pats=", ".join([(x,"(All)")[x=="%"] for x in cmd])
-            comment("SQLite dump (by APSW %s)" % (apsw.apswversion(),))
-            comment("SQLite version " + apsw.sqlitelibversion())
+            comment("SQLite dump (by python sqlite %s)" % (sqlite3.version,))
+            comment("SQLite version " + sqlite3.sqlite_version)
             comment("Date: " +unicodify(time.strftime("%c")))
             comment("Tables like: "+pats)
-            comment("Database: "+self.db.filename)
+            comment("Database: "+self.dbfilename)
             try:
                 import getpass
                 import socket
@@ -1180,9 +1169,9 @@ Enter SQL statements terminated with a ";"
                         # could thwart us so we have to manipulate
                         # sqlite_master directly
                         if sql[0].lower().split()[:3]==["create", "virtual", "table"]:
-                            self.write(self.stdout, "DELETE FROM sqlite_master WHERE name="+apsw.format_sql_value(table)+" AND type='table';\n")
+                            self.write(self.stdout, "DELETE FROM sqlite_master WHERE name="+str(table)+" AND type='table';\n")
                             self.write(self.stdout, "INSERT INTO sqlite_master(type,name,tbl_name,rootpage,sql) VALUES('table',%s,%s,0,%s);\n"
-                                       % (apsw.format_sql_value(table), apsw.format_sql_value(table), apsw.format_sql_value(sql[0])))
+                                       % (str(table), str(table), str(sql[0])))
                         else:
                             self.write(self.stdout, "DROP TABLE IF EXISTS "+self._fmt_sql_identifier(table)+";\n")
                             self.write(self.stdout, sqldef(sql[0]))
@@ -1204,7 +1193,7 @@ Enter SQL statements terminated with a ";"
                 first=True
                 for name,sql in self.db.cursor().execute("SELECT name,sql FROM sqlite_master "
                                                          "WHERE sql NOT NULL AND type='view' "
-                                                         "AND name IN ( "+",".join([apsw.format_sql_value(i) for i in tables])+
+                                                         "AND name IN ( "+",".join([json.dumps(str(i)) for i in tables])+
                                                          ") ORDER BY _ROWID_"):
                     if first:
                         comment("Views")
@@ -1226,8 +1215,8 @@ Enter SQL statements terminated with a ";"
                                 comment("For primary key autoincrements the next id "
                                         "to use is stored in sqlite_sequence")
                                 first=False
-                            self.write(self.stdout, 'DELETE FROM main.sqlite_sequence WHERE name=%s;\n' % (apsw.format_sql_value(t),))
-                            self.write(self.stdout, 'INSERT INTO main.sqlite_sequence VALUES (%s, %s);\n' % (apsw.format_sql_value(t), v[0][0]))
+                            self.write(self.stdout, 'DELETE FROM main.sqlite_sequence WHERE name=%s;\n' % (str(t),))
+                            self.write(self.stdout, 'INSERT INTO main.sqlite_sequence VALUES (%s, %s);\n' % (str(t), v[0][0]))
                     if not first:
                         blank()
             finally:
@@ -2075,13 +2064,13 @@ Enter SQL statements terminated with a ";"
         as Python code instead.
 
         For Python code the symbol 'shell' refers to the instance of
-        the shell and 'apsw' is the apsw module.
+        the shell and 'sqlite3' is the sqlite3 module.
         """
         if len(cmd)!=1:
             raise self.Error("read takes a single filename")
         if cmd[0].lower().endswith(".py"):
             g={}
-            g.update({'apsw': apsw, 'shell': self})
+            g.update({'sqlite3': sqlite3, 'shell': self})
             if sys.version_info<(3,0):
                 execfile(cmd[0], g, g)
             else:
@@ -2483,7 +2472,7 @@ Enter SQL statements terminated with a ";"
 
         For dot commands it will be one line.  For SQL statements it
         will be as many as is necessary to have a
-        :meth:`~apsw.complete` statement (ie semicolon terminated).
+        :meth:`~sqlite3.complete_statement` statement (ie semicolon terminated).
         Returns None on end of file."""
         try:
             self._completion_first=True
@@ -2494,7 +2483,7 @@ Enter SQL statements terminated with a ";"
                 return ""
             if command[0]=="?": command=".help "+command[1:]
             # incomplete SQL?
-            while command[0]!="." and not apsw.complete(command):
+            while command[0]!="." and not sqlite3.complete_statement(command):
                 self._completion_first=False
                 line=self.getline(self.moreprompt)
                 if line is None: # unexpected eof
@@ -2942,7 +2931,7 @@ def main():
         _,_,cmds=s.process_args(sys.argv[1:])
         if len(cmds)==0:
             s.cmdloop()
-    except:
+    except Exception:
         v=sys.exc_info()[1]
         if getattr(v, "_handle_exception_saw_this", False):
             pass
