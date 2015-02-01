@@ -1,6 +1,6 @@
 # sqlite_shell
 
-A friendlier SQLite shell
+A friendlier [SQLite](http://sqlite.org/) shell
 
 Borrows from the [shell from
 APSW](https://github.com/rogerbinns/apsw/blob/master/tools/shell.py) but
