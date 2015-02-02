@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 
 import sys
-import json
 import sqlite3
 import shlex
 import os
@@ -343,6 +342,16 @@ OPTIONS include:
                 "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789~!@#$%^&*()`_-+={}[]:;,.<>/?|"
                 ]
 
+    def _fmt_sql_value(self, value):
+        """Take a value and format it according to SQLite quoting rules, for use
+        in a query, such as an INSERT statement when dumping
+        """
+        if isinstance(value, (int, float)):
+            return str(value)
+
+        sql = "SELECT quote(%r)" % str(value)
+        return self.db.execute(sql).fetchone()[0]
+
     def _fmt_c_string(self, v):
         "Format as a C string including surrounding double quotes"
         if isinstance(v, self._basestring):
@@ -627,7 +636,7 @@ OPTIONS include:
         """
         if header:
             return
-        fmt=lambda x: self.colour.colour_value(x, json.dumps(str(x)))
+        fmt=lambda x: self.colour.colour_value(x, self._fmt_sql_value(x))
         out="INSERT INTO "+self._output_table+" VALUES("+",".join([fmt(l) for l in line])+");\n"
         self.write(self.stdout, out)
 
@@ -1193,7 +1202,7 @@ Enter SQL statements terminated with a ";"
                 first=True
                 for name,sql in self.db.cursor().execute("SELECT name,sql FROM sqlite_master "
                                                          "WHERE sql NOT NULL AND type='view' "
-                                                         "AND name IN ( "+",".join([json.dumps(str(i)) for i in tables])+
+                                                         "AND name IN ( "+",".join([self._fmt_sql_value(i) for i in tables])+
                                                          ") ORDER BY _ROWID_"):
                     if first:
                         comment("Views")
